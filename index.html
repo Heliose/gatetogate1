@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Gate to Gate</title>
+    <meta name="description" content="A day in the life of an airport in 2035, as a living organism. Eight chapters, a glass-floor x-ray, a suitcase ride, a turnaround ballet, a digital tower and a sky full of tracked paths." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b1118'/%3E%3Cpath d='M6 20h20M9 20l-2-5M23 20l2-5' stroke='%235ee7ff' stroke-width='2' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='12' r='2.2' fill='%23ffb347'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="scene"></canvas>
+      <svg id="leaders" aria-hidden="true"></svg>
+      <div id="labels" aria-hidden="true"></div>
+
+      <!-- brand + chapter title -->
+      <header id="brand" class="ui">
+        <div class="kicker">GATE TO <b>GATE</b></div>
+        <div class="tag">An airport in 2035, as a living organism</div>
+        <div class="chapter-head">
+          <div class="ch-num mono" id="ch-num">01</div>
+          <div>
+            <div class="ch-title" id="ch-title">Dawn</div>
+            <div class="ch-sub" id="ch-sub">The organism wakes</div>
+          </div>
+        </div>
+        <div class="clock card">
+          <span class="mono" id="clock-time">05:40</span>
+          <span class="clock-word" id="clock-word">first light</span>
+          <span class="pulse" id="pulse" title="Activity pulse"><i></i><span class="mono" id="pulse-bpm">62</span></span>
+        </div>
+      </header>
+
+      <!-- captions -->
+      <div id="caption" class="ui"><div class="cap-inner" id="caption-text"></div></div>
+
+      <!-- chapter rail + transport -->
+      <nav id="rail" class="ui" aria-label="Chapters">
+        <div class="transport">
+          <button class="tbtn" id="btn-prev" title="Previous chapter (←)" aria-label="Previous chapter"><svg viewBox="0 0 24 24"><path d="M18 6 9 12l9 6"/><path d="M6 6v12"/></svg></button>
+          <button class="tbtn big" id="btn-play" title="Play / pause (space)" aria-label="Play or pause"><svg class="ic-play" viewBox="0 0 24 24"><path d="M7 5v14l12-7Z" fill="currentColor" stroke="none"/></svg><svg class="ic-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></svg></button>
+          <button class="tbtn" id="btn-next" title="Next chapter (→)" aria-label="Next chapter"><svg viewBox="0 0 24 24"><path d="m6 6 9 6-9 6"/><path d="M18 6v12"/></svg></button>
+          <button class="tbtn resume" id="btn-resume" title="Resume the film camera (F)" aria-label="Resume the film camera"><svg viewBox="0 0 24 24"><path d="M4 7V4h3M20 7V4h-3M4 17v3h3M20 17v3h-3"/><circle cx="12" cy="12" r="3"/></svg><span>Film camera</span></button>
+        </div>
+        <div class="scrub" id="scrub" role="slider" tabindex="0" aria-label="Chapter time" aria-valuemin="0" aria-valuemax="100">
+          <div class="scrub-track"><i id="scrub-fill"></i><b id="scrub-knob"></b></div>
+          <div class="scrub-marks" id="scrub-marks"></div>
+          <div class="scrub-time mono" id="scrub-time">0:00 / 0:40</div>
+        </div>
+        <div class="chips" id="chips"></div>
+      </nav>
+
+      <!-- controls panel -->
+      <aside id="panel" class="ui card">
+        <div class="panel-head">
+          <div class="ptabs" id="ptabs"></div>
+          <button class="tbtn small" id="panel-collapse" title="Collapse the controls (C)" aria-label="Collapse the controls"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></button>
+        </div>
+        <div class="panel-body" id="panel-body"></div>
+      </aside>
+      <button class="tbtn panel-open ui" id="panel-open" title="Open the controls (C)" aria-label="Open the controls"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 12h3M11 12h9M4 17h12M20 17h0"/><circle cx="16" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="18" cy="17" r="2"/></svg></button>
+
+      <!-- toolbar -->
+      <nav id="toolbar" class="ui" aria-label="Tools">
+        <button class="tbtn" id="btn-sound" title="Sound (M)" aria-label="Sound"><svg viewBox="0 0 24 24"><path d="M4 10v4h3l4 3V7L7 10H4Z"/><path d="M15 9.5a3.5 3.5 0 0 1 0 5"/><path d="M17.5 7a7 7 0 0 1 0 10"/></svg></button>
+        <button class="tbtn" id="btn-narrate" title="Narration (N)" aria-label="Narration"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></button>
+        <button class="tbtn" id="btn-save" title="Save a frame (S)" aria-label="Save a frame"><svg viewBox="0 0 24 24"><path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg></button>
+        <button class="tbtn" id="btn-link" title="Copy a link to this exact state (L)" aria-label="Copy a link"><svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 1 0-5.6l2.4-2.4a4 4 0 0 1 5.6 5.6L17 12.6"/><path d="M14 10a4 4 0 0 1 0 5.6l-2.4 2.4a4 4 0 0 1-5.6-5.6L7 11.4"/></svg></button>
+        <button class="tbtn" id="btn-eye" title="Hide the interface (H)" aria-label="Hide the interface"><svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+        <button class="tbtn" id="btn-help" title="How it works (?)" aria-label="How it works"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M9.3 9.3a2.8 2.8 0 0 1 5.4 1c0 1.9-2.7 2.3-2.7 4"/><circle cx="12" cy="17.4" r=".4" fill="currentColor"/></svg></button>
+      </nav>
+
+      <div id="toast" role="status" aria-live="polite"></div>
+      <div id="tooltip"><div class="tt-title"></div><div class="tt-sub"></div></div>
+
+      <div id="help" class="overlay" hidden>
+        <div class="help-card card">
+          <div class="help-head"><span class="label">HOW IT WORKS</span><button class="tbtn small" id="help-close" aria-label="Close">✕</button></div>
+          <p class="help-lead">A film in eight chapters that you can stop, scrub and take apart. Every chapter has its own controls in the panel on the right.</p>
+          <ul>
+            <li><b>Play</b> the film, or jump between chapters with the chips at the bottom. Drag the chapter timeline to scrub.</li>
+            <li><b>Grab the view</b> at any time: drag to orbit, right-drag to pan, wheel to zoom. The film camera lets go; press <b>F</b> or “Film camera” to hand it back.</li>
+            <li><b>X-ray:</b> in chapter 2, click anywhere on the ground to open the glass there. Toggle the hidden networks in the panel.</li>
+            <li><b>Follow the bag:</b> chapter 3 rides a suitcase. Change the ride speed, the camera mode or the bag itself.</li>
+            <li><b>Turnaround:</b> chapter 4 runs a schedule. Add a late arrival and watch the plan reshuffle.</li>
+            <li><b>Panel tabs:</b> Chapter · World (time of day, traffic) · Camera · Look (post, quality) · Vitals.</li>
+          </ul>
+          <div class="keys mono">space play · ← → chapters · 1–8 jump · F film camera · X x-ray · C controls · H hide UI · S save · L link · M sound · ? help</div>
+        </div>
+      </div>
+
+      <div id="loader">
+        <div class="ld-mark"><span>GATE TO</span><b>GATE</b><em id="ld-step">waking the airport</em></div>
+        <div class="ld-bar"><i></i></div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
