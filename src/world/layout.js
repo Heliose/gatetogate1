@@ -80,11 +80,11 @@ export const UNDERGROUND = {
     ],
   },
   water: {
-    color: '#6fa8ff', y: -4.4, radius: 0.9, speed: 3, spacing: 16, name: 'Water & drainage', unit: 'm³/h',
+    color: '#6fa8ff', y: -11.5, radius: 0.9, speed: 3, spacing: 16, name: 'Water & drainage', unit: 'm³/h',
     routes: [
-      [[-430, -4.4, -134], [430, -4.4, -134]],
-      [[-420, -4.4, 60], [420, -4.4, 60]],
-      ...Array.from({ length: 5 }, (_, i) => [[-320 + i * 160, -4.4, 60], [-320 + i * 160, -4.4, -134]]),
+      [[-430, -11.5, -134], [430, -11.5, -134]],
+      [[-420, -11.5, 60], [420, -11.5, 60]],
+      ...Array.from({ length: 5 }, (_, i) => [[-320 + i * 160, -11.5, 60], [-320 + i * 160, -11.5, -134]]),
     ],
   },
   apm: {
@@ -98,36 +98,41 @@ export const SERVICE_SPOTS = {
   bridge: { x: -3.6, z: 10, name: 'Jet bridge' },
   gpu: { x: 5, z: 12, ry: -Math.PI / 2, name: 'Ground power' },
   fuel: { x: -9.5, z: -2.5, ry: 0, name: 'Fuel hydrant dispenser' },
-  cateringFwd: { x: 6.2, z: 8.5, ry: Math.PI / 2, name: 'Catering (fwd)' },
-  cateringAft: { x: 6.2, z: -9, ry: Math.PI / 2, name: 'Catering (aft)' },
-  bagsFwd: { x: -6.5, z: 6, ry: -Math.PI / 2, name: 'Baggage (fwd hold)' },
-  bagsAft: { x: -6.5, z: -10, ry: -Math.PI / 2, name: 'Baggage (aft hold)' },
-  beltFwd: { x: -3.8, z: 7.5, ry: -Math.PI / 2 - 0.5, name: 'Belt loader (fwd)' },
-  beltAft: { x: -3.8, z: -8, ry: -Math.PI / 2 + 0.5, name: 'Belt loader (aft)' },
+  cateringFwd: { x: 6.5, z: 13, ry: Math.PI / 2, name: 'Catering (fwd)' },
+  cateringAft: { x: 6.5, z: -13.5, ry: Math.PI / 2, name: 'Catering (aft)' },
+  bagsFwd: { x: 8.5, z: 3.5, ry: Math.PI / 2, name: 'Baggage (fwd hold)' },
+  bagsAft: { x: 8.5, z: -9, ry: Math.PI / 2, name: 'Baggage (aft hold)' },
+  beltFwd: { x: 4.4, z: 7.5, ry: Math.PI / 2 + 0.55, name: 'Belt loader (fwd)' },
+  beltAft: { x: 4.4, z: -7.5, ry: Math.PI / 2 - 0.55, name: 'Belt loader (aft)' },
   cleaning: { x: 9, z: 16, ry: Math.PI, name: 'Cabin cleaning' },
   water: { x: 7.5, z: -15, ry: Math.PI / 2, name: 'Potable water' },
   lav: { x: 4.5, z: -21, ry: 0, name: 'Lavatory service' },
   pushback: { x: 0, z: 22.5, ry: Math.PI, name: 'Pushback tug' },
-  stairs: { x: -6.5, z: -12, ry: -Math.PI / 2, name: 'Stairs (aft)' },
+  stairs: { x: -6.5, z: -12.5, ry: -Math.PI / 2, name: 'Stairs (aft)' },
 };
 
-/* Baggage route of the hero bag (world coordinates). Speeds m/s. */
+/* Baggage route of the hero bag (world coordinates). Belt surfaces sit 1 cm under the route;
+   on the cart the route is the cart bed (ground + 0.95). Speeds in m/s. */
 export const BAG_ROUTE = {
   points: [
-    [-60, 0.85, 128], [-60, 0.85, 120], [-60, 0.85, 114],            // check-in belt
+    [-60, 0.85, 128], [-60, 0.85, 120], [-60, 0.85, 114],              // check-in belt
     [-60, 0.4, 110], [-60, -2.0, 104], [-60, -5.2, 98], [-60, -6.3, 94], // chute down
-    [-60, -6.3, 86], [-60, -6.3, 78],                                // CT scanner at z≈82
-    [-60, -6.3, 70], [-52, -6.3, 62], [-40, -6.3, 58], [-20, -6.3, 58], [0, -6.3, 62], [14, -6.3, 72],  // sorter maze
+    [-60, -6.3, 86], [-60, -6.3, 78],                                  // CT scanner at z≈82
+    [-60, -6.3, 70], [-52, -6.3, 62], [-40, -6.3, 58], [-20, -6.3, 58], [0, -6.3, 62], [14, -6.3, 72],   // sorter maze
     [26, -6.3, 86], [40, -6.3, 92], [56, -6.3, 86], [66, -6.3, 72], [72, -6.3, 56], [84, -6.3, 44],
-    [100, -6.3, 36], [120, -6.3, 36],                                // makeup: onto the cart at x≈112
-    [150, -5.4, 36], [182, -2.6, 36], [206, -0.3, 36],               // ramp up to the apron
-    [220, 0.3, 30], [224, 0.3, 14], [200, 0.3, 2], [164, 0.3, -6], [146, 0.3, -14], // drive to the stand
-    [133, 0.3, -20], [131, 0.8, -24.5], [131.3, 1.5, -26.5], [131.6, 2.2, -27.4], // belt loader up to the fwd hold
-    [132.8, 2.3, -27.6], [134.2, 2.3, -27.8],                        // into the hold
+    [96, -6.3, 38], [103, -7.2, 36],                                   // belt end dips to the cart
+    [109, -8.05, 36], [196, -8.05, 36], [214, -8.05, 33],              // on the cart, along the hall
+    [216, -6.4, 26], [216, -3.0, 12], [216, 0.95, -4],                 // ramp up to the apron
+    [212, 1.0, -12], [160, 1.0, -16], [146, 1.0, -17], [141.2, 1.0, -19.2], // drive to the stand (right side)
+    [139.6, 1.3, -22.4], [138.3, 2.0, -24.6], [137.4, 2.4, -25.6],     // belt loader up to the fwd hold door
+    [136.0, 2.45, -25.8], [134.6, 2.45, -26.0],                        // into the hold
   ],
-  speeds: [1.0, 1.0, 1.0, 1.2, 3.0, 3.0, 1.2, 1.0, 1.0, 2.2, 2.4, 2.4, 2.4, 2.4, 2.4, 2.4, 2.4, 2.4, 2.4, 2.4, 2.4, 2.0, 1.2, 3.5, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 4.0, 1.2, 0.8, 0.8, 0.8, 0.6, 0.6],
-  ctZ: 82,                 // bag is inside the CT scanner around this z
-  cartFrom: 23, cartTo: 30, // waypoint indices where the bag rides the cart
+  speeds: [1.0, 1.0, 1.0, 1.2, 3.0, 3.0, 1.2, 1.0, 1.0, 2.2, 2.4, 2.4, 2.4, 2.4, 2.4, 2.4, 2.4, 2.4, 2.4, 2.4, 2.4, 2.0, 1.4, 0.8, 5.0, 4.0, 4.5, 4.5, 4.5, 5.0, 5.0, 4.0, 1.0, 0.8, 0.8, 0.8, 0.6, 0.6],
+  ctZ: 82,
+  ctFrom: 7, ctTo: 8,          // waypoint indices spanning the scanner
+  cartFrom: 23, cartTo: 32,    // waypoint indices where the bag rides the cart
+  loaderTo: 35,                // last waypoint of the belt loader climb
+  ramp: { x: 216, z0: 34, z1: -4, y0: -9, y1: 0 },
 };
 
 /* Flight paths. Departures roll east on 09 and climb out; arrivals come in from the west. */

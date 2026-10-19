@@ -270,7 +270,7 @@ export function beaconMaterial(color = '#ff3b2f', rate = 1.1) {
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\nuniform float uTime;`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-        totalEmissiveRadiance *= 0.2 + 5.5 * pow(0.5 + 0.5 * sin(uTime * ${(rate * 6.283).toFixed(3)}), 10.0);`);
+        totalEmissiveRadiance *= 0.25 + 2.2 * pow(0.5 + 0.5 * sin(uTime * ${(rate * 6.283).toFixed(3)}), 10.0);`);
   };
   mat.customProgramCacheKey = () => 'beacon-' + rate;
   return mat;

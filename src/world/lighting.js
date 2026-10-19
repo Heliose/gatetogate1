@@ -23,6 +23,7 @@ const KEYS = [
 ];
 
 const cA = new THREE.Color(), cB = new THREE.Color();
+const _lm = new THREE.Matrix4(), _linv = new THREE.Matrix4(), _lc = new THREE.Vector3(), _zero = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
 export function sampleDay(h) {
   h = ((h % 24) + 24) % 24;
   let i = 0;
@@ -131,8 +132,21 @@ export class Daylight {
   }
 
   fitShadow(center, radius) {
-    if (center.distanceTo(this.shadowCenter) < radius * 0.04 && Math.abs(radius - this.shadowRadius) < radius * 0.05) return false;
-    this.shadowCenter.copy(center);
+    // quantise the radius so texel size changes rarely, then snap the centre to whole texels
+    // in light space: a moving focus no longer makes the shadows swim
+    radius = Math.pow(1.3, Math.round(Math.log(radius) / Math.log(1.3)));
+    const { dir } = sunDirection(this.hour);
+    _lm.lookAt(dir, _zero, _up);
+    _linv.copy(_lm).invert();
+    _lc.copy(center).applyMatrix4(_linv);
+    const texel = (2 * radius) / this.sun.shadow.mapSize.x;
+    _lc.x = Math.round(_lc.x / texel) * texel;
+    _lc.y = Math.round(_lc.y / texel) * texel;
+    _lc.applyMatrix4(_lm);
+    const sameRadius = Math.abs(radius - this.shadowRadius) < 1e-6;
+    if (sameRadius && _lc.distanceToSquared(this.shadowCenter) < 1e-8) return false;
+    this.shadowCenter.copy(_lc);
+    if (sameRadius) { this._placeSun(); return true; }
     this.shadowRadius = radius;
     const sc = this.sun.shadow.camera;
     sc.left = -radius; sc.right = radius; sc.top = radius; sc.bottom = -radius;

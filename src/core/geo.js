@@ -220,6 +220,43 @@ export function pathTube(curve, radius, { segments = null, radial = 8 } = {}) {
   return g;
 }
 
+/* Continuous rectangular strip along a curve between arc fractions u0..u1 (a conveyor belt).
+   Cross-section is kept level with world up; v runs along the strip in metres so a cleat
+   texture can scroll. Faces get their own vertices so normals stay crisp. */
+export function beltStrip(curve, u0 = 0, u1 = 1, { width = 1, thick = 0.12, yOffset = -0.07, xOffset = 0, step = 0.6, closed = false } = {}) {
+  const len = curve.getLength() * (u1 - u0);
+  const n = Math.max(2, Math.ceil(len / step));
+  const pos = [], nor = [], uv = [], idx = [];
+  const P = new THREE.Vector3(), T = new THREE.Vector3(), S = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
+  const corner = (sx, sy) => [P.x + S.x * sx + xOffset * S.x, P.y + yOffset + sy, P.z + S.z * sx + xOffset * S.z];
+  for (let i = 0; i <= n; i++) {
+    const u = closed ? (u0 + (u1 - u0) * (i / n)) % 1 : u0 + (u1 - u0) * (i / n);
+    curve.getPointAt(THREE.MathUtils.clamp(u, 0, 1), P);
+    curve.getTangentAt(THREE.MathUtils.clamp(u, 0.0005, 0.9995), T);
+    S.crossVectors(UP, T);
+    S.y = 0;
+    if (S.lengthSq() < 1e-6) S.set(1, 0, 0); else S.normalize();
+    const s = (i / n) * len;
+    const c0 = corner(-width / 2, thick / 2), c1 = corner(width / 2, thick / 2), c2 = corner(width / 2, -thick / 2), c3 = corner(-width / 2, -thick / 2);
+    const faces = [[c0, c1, [0, 1, 0]], [c1, c2, [S.x, 0, S.z]], [c2, c3, [0, -1, 0]], [c3, c0, [-S.x, 0, -S.z]]];
+    for (const [a, b, nrm] of faces) {
+      pos.push(...a, ...b);
+      nor.push(...nrm, ...nrm);
+      uv.push(0, s, 1, s);
+    }
+  }
+  for (let i = 0; i < n; i++) for (let f = 0; f < 4; f++) {
+    const a = (i * 4 + f) * 2, b = ((i + 1) * 4 + f) * 2;
+    idx.push(a, b, a + 1, b, b + 1, a + 1);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  return g;
+}
+
 /* Open cone for light beams: apex at the origin, opening toward -Y */
 export function beamGeo(rTop, rBottom, len, seg = 24) {
   const g = new THREE.CylinderGeometry(rTop, rBottom, len, seg, 1, true);

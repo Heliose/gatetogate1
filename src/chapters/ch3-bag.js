@@ -4,22 +4,25 @@ import { bagTagTex } from '../world/textures.js';
 /* Chapter 3 — Follow the bag: ride one suitcase from check-in to the hold */
 const sm = { pos: new THREE.Vector3(), target: new THREE.Vector3(), init: false };
 const tan = new THREE.Vector3(), side = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0), tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3();
-let lastU = -1, scanned = false, capIdx = -1;
-const CAPS = [
-  { u: 0.0, text: 'One bag. Checked in at desk 14, tagged for <em>Lisbon</em>, and dropped into the dark.' },
-  { u: 0.08, text: 'Under the hall it joins a river of luggage. Nobody touches it again until the hold.' },
-  { u: 0.135, text: 'The <b>CT scanner</b> sees through the shell: a laptop, shoes, a 90 ml bottle. Cleared by the AI in a fifth of a second.' },
-  { u: 0.3, text: 'The sorter reads the tag at every switch and diverts it toward gate 6.' },
-  { u: 0.56, text: 'At make-up it rides a cart up the ramp into daylight.' },
-  { u: 0.78, text: 'Across the apron to stand G6, where the belt loader is waiting at the forward hold.' },
-  { u: 0.93, text: 'Into the hold, nets closed. Eleven minutes, gate to hold.' },
-];
+let lastU = -1, scanned = false, lastStage = null, W = null;
+// stages keyed to the route's waypoints, so captions, labels and the camera follow the real geometry
+const stageOf = (u) => (u < W[3] ? 'checkin' : u < W[6] ? 'chute' : u < W[8] + 0.01 ? 'ct' : u < W[21] ? 'sorter' : u < W[23] ? 'makeup' : u < W[28] ? 'ramp' : u < W[32] ? 'apron' : u < W[35] ? 'loader' : 'hold');
+const STAGE_NAME = { checkin: 'Check-in', chute: 'Drop chute', ct: 'CT screening', sorter: 'Sorter', makeup: 'Make-up', ramp: 'Cart ramp', apron: 'Apron drive', loader: 'Belt loader', hold: 'In the hold' };
+const CAPS = {
+  checkin: 'One bag. Checked in at desk 14, tagged for <em>Lisbon</em>, and dropped into the dark.',
+  chute: 'Under the hall it joins a river of luggage. Nobody touches it again until the hold.',
+  ct: 'The <b>CT scanner</b> sees through the shell: a laptop, shoes, a 90 ml bottle. Cleared by the AI in a fifth of a second.',
+  sorter: 'The sorter reads the tag at every switch and diverts it toward gate 6.',
+  makeup: 'At make-up it drops onto a cart that drives up the ramp into daylight.',
+  apron: 'Across the apron to stand G6, where the belt loader is waiting at the forward hold.',
+  loader: 'Up the belt and into the hold, nets closed. Eleven minutes, gate to hold.',
+};
 const STATIONS = [
   { id: 'checkin', pos: [-60, 1.6, 129], name: 'Check-in', sub: 'desk 14 · tag printed' },
   { id: 'ct', pos: [-60, -3.6, 82], name: 'CT screening', sub: 'AI clearance · 0.2 s' },
   { id: 'sorter', pos: [20, -3.6, 60], name: 'Sorter', sub: '14 switches · 2.4 m/s' },
   { id: 'makeup', pos: [110, -3.4, 38], name: 'Make-up', sub: 'onto the cart' },
-  { id: 'hold', pos: [133, 5.5, -26], name: 'Forward hold', sub: 'G6 · NOVA 1735' },
+  { id: 'hold', pos: [139, 5.5, -26], name: 'Forward hold', sub: 'G6 · NOVA 1735' },
 ];
 
 export default {
@@ -32,7 +35,7 @@ export default {
   shots: null,
   captions: null,
   params: [
-    { key: 'speed', label: 'Ride speed', type: 'range', min: 0.4, max: 4, step: 0.1, default: 1.6, fmt: 'x' },
+    { key: 'speed', label: 'Ride speed', type: 'range', min: 0.4, max: 4, step: 0.1, default: 2.0, fmt: 'x' },
     { key: 'cam', label: 'Camera', type: 'seg', options: ['chase', 'side', 'top', 'pov'], default: 'chase' },
     { key: 'smooth', label: 'Camera smoothing', type: 'range', min: 0, max: 1, step: 0.05, default: 0.6 },
     { key: 'bagColor', label: 'Suitcase colour', type: 'color', default: '#2d5f8f', group: 'The bag' },
@@ -52,10 +55,12 @@ export default {
     B.bags.visible = p.others;
     B.ctU.uScanTint.value.set(p.scanTint);
     sm.init = false;
-    lastU = -1; scanned = false; capIdx = -1;
+    W = B.route.wpU;
+    lastU = -1; scanned = false; lastStage = null;
     ctx.post.setWash('#ffb347', 0.08);
     ctx.sound.mix({ wind: 0.1, jets: 0.05, hum: 0.9, drone: 0, room: 0.9 });
     ctx.focusOverride = B.hero.position;
+    B.tug.group.visible = B.cart.group.visible = true;
   },
   onParam(ctx, key, v, p) {
     const B = ctx.world.baggage;
@@ -66,7 +71,7 @@ export default {
     if (key === 'dest') { const tex = bagTagTex((v || 'LIS').toUpperCase().slice(0, 4)); B.hero.traverse((o) => { if (o.isMesh && o.material.map?.userData?.tag !== undefined) { /* noop */ } }); B.tagMat = tex; }
     if (key === 'cam') sm.init = false;
   },
-  scrub(ctx, t) { sm.init = false; capIdx = -1; },
+  scrub(ctx, t) { sm.init = false; lastStage = null; },
   update(ctx, t, dt, p) {
     const B = ctx.world.baggage;
     const simT = t * p.speed;
@@ -82,19 +87,18 @@ export default {
     if (k < 0.1) scanned = false;
     // cargo door
     const door = ctx.world.hero.ac.doors.cargoFwd;
-    door?.set(THREE.MathUtils.smoothstep(u, 0.84, 0.9));
+    door?.set(THREE.MathUtils.smoothstep(u, W[29], W[31]));
     // lights follow the bag underground
     const hp = B.hero.position;
-    if (hp.y < -1) ctx.daylight.pointLight(0, tmp.set(hp.x, hp.y + 2.2, hp.z), '#ffd9a0', 22, 16); else ctx.daylight.releaseLight(0);
+    if (hp.y < -1) ctx.daylight.pointLight(0, tmp.set(hp.x, hp.y + 2.6, hp.z), '#ffd9a0', 9, 22); else ctx.daylight.releaseLight(0);
     ctx.daylight.pointLight(1, tmp2.set(-60, -3.8, 82), '#5ee7ff', 14 + k * 30, 12);
-    // captions keyed on route progress
-    let ci = -1;
-    for (let i = 0; i < CAPS.length; i++) if (u >= CAPS[i].u) ci = i;
-    if (ci !== capIdx) { capIdx = ci; if (ci >= 0) { ctx.caption(CAPS[ci].text); ctx.narrator.speak(CAPS[ci].text); setTimeout(() => { if (capIdx === ci) ctx.caption(''); }, 6500); } }
+    // captions keyed on the stage of the route
+    const stage = stageOf(u);
+    if (stage !== lastStage) { lastStage = stage; const text = CAPS[stage]; if (text) { ctx.caption(text); ctx.narrator.speak(text); setTimeout(() => { if (lastStage === stage) ctx.caption(''); }, 7000); } }
     // labels
-    if (p.bagLabel) ctx.labels.add('bag:hero', { anchor: () => tmp.copy(B.hero.position).add(up), html: `<div class="lk">your bag</div><div class="lt">${(p.dest || 'LIS').toUpperCase()} · NOVA 1735</div><div class="ls">${k > 0.3 ? 'CT: laptop · shoes · 90 ml liquid · cleared' : u < 0.08 ? 'checked in · desk 14' : u < 0.58 ? `sorter · ${(B.route.speedAtU(u) * p.speed).toFixed(1)} m/s` : u < 0.93 ? 'on the cart · stand G6' : 'in the hold'}</div>`, cls: 'bag', offset: [0, -18], leader: true, priority: 5 });
+    if (p.bagLabel) ctx.labels.add('bag:hero', { anchor: () => tmp.copy(B.hero.position).add(up), html: `<div class="lk">your bag</div><div class="lt">${(p.dest || 'LIS').toUpperCase()} · NOVA 1735</div><div class="ls">${k > 0.3 ? 'CT: laptop · shoes · 90 ml liquid · cleared' : stage === 'checkin' || stage === 'chute' ? 'checked in · desk 14' : stage === 'sorter' || stage === 'ct' ? `sorter · ${(B.route.speedAtU(u) * p.speed).toFixed(1)} m/s` : stage === 'makeup' || stage === 'ramp' || stage === 'apron' ? 'on the cart · to stand G6' : stage === 'loader' ? 'belt loader · fwd hold' : 'in the hold'}</div>`, cls: 'bag', offset: [0, -18], leader: true, priority: 5 });
     else ctx.labels.remove('bag:hero');
-    if (k > 0.2) ctx.labels.add('bag:ct', { anchor: new THREE.Vector3(-58.2, -3.2, 82), html: `<div class="lk">CT-X · AI screening</div><div class="lt">Items detected</div><div class="ls">laptop (cleared) · shoes · clothes<br>liquid 90 ml · within limit<br>threat score 0.3% · <b>cleared</b> in 0.21 s</div>`, cls: 'ct', offset: [120, -10], leader: true, priority: 4 });
+    if (k > 0.2) ctx.labels.add('bag:ct', { anchor: new THREE.Vector3(-58.2, -3.6, 82), html: `<div class="lk">CT-X · AI screening</div><div class="lt">Items detected</div><div class="ls">laptop (cleared) · shoes · clothes<br>liquid 90 ml · within limit<br>threat score 0.3% · <b>cleared</b> in 0.21 s</div>`, cls: 'ct', offset: [120, -10], leader: true, priority: 4 });
     else ctx.labels.remove('bag:ct');
     if (p.stations) for (const s of STATIONS) ctx.labels.add('bag:' + s.id, { anchor: new THREE.Vector3(...s.pos), html: `<div class="lt">${s.name}</div><div class="ls">${s.sub}</div>`, cls: '', offset: [0, -14], leader: true, maxDist: 70 });
     else for (const s of STATIONS) ctx.labels.remove('bag:' + s.id);
@@ -109,7 +113,7 @@ export default {
     const [c0, c1] = B.ctRange;
     const inCT = THREE.MathUtils.smoothstep(u, c0 - 0.02, c0) * (1 - THREE.MathUtils.smoothstep(u, c1, c1 + 0.02));
     const onCart = THREE.MathUtils.smoothstep(u, B.cartRange[0] - 0.01, B.cartRange[0] + 0.01) * (1 - THREE.MathUtils.smoothstep(u, B.cartRange[1] + 0.02, B.cartRange[1] + 0.05));
-    const inHold = THREE.MathUtils.smoothstep(u, 0.975, 0.99);
+    const inHold = W ? THREE.MathUtils.smoothstep(u, W[35] - 0.002, W[36]) : 0;
     const P = new THREE.Vector3(), T = new THREE.Vector3();
     let fov = 46;
     const mode = p.cam;
@@ -123,10 +127,11 @@ export default {
       const sp = new THREE.Vector3().copy(bag).addScaledVector(side, 3.6).addScaledVector(up, 1.1);
       P.lerp(sp, inCT);
       T.lerp(new THREE.Vector3().copy(bag).addScaledVector(up, 0.3), inCT);
-      // inside the hold: pull back behind the bag
-      const hp = new THREE.Vector3().copy(bag).addScaledVector(tan, -3).addScaledVector(up, 1.3);
+      // into the hold: watch from outside the cargo door as the bag disappears inside
+      const hp = new THREE.Vector3(139.2, 3.3, -22.6);
       P.lerp(hp, inHold);
-      fov = 46 + inHold * 10;
+      T.lerp(new THREE.Vector3().copy(bag).addScaledVector(up, 0.15), inHold);
+      fov = 46 + inHold * 8;
     }
     // smoothing
     const lam = 2 + (1 - p.smooth) * 18;
@@ -155,7 +160,7 @@ export default {
   panel(ctx, p, t) {
     const B = ctx.world.baggage;
     const u = Math.max(0, lastU);
-    const stage = u < 0.08 ? 'Check-in & drop' : u < B.ctRange[1] + 0.02 ? 'CT screening' : u < 0.56 ? 'Sorter' : u < 0.62 ? 'Make-up' : u < 0.78 ? 'Ramp & apron' : u < 0.93 ? 'Belt loader' : 'In the hold';
+    const stage = W ? STAGE_NAME[stageOf(u)] : '';
     return `<div class="g-head"><span class="big">${Math.round(u * 100)}%</span><span class="small">${stage} · ${Math.round(u * B.route.length)} m of ${Math.round(B.route.length)} m</span></div>
       <div class="legend" style="margin-top:8px"><div class="legend-row" style="--c:#ffb347"><i></i><span class="ln">Bag speed</span><span class="lm">${(B.route.speedAtU(u) * p.speed).toFixed(1)} m/s</span></div>
       <div class="legend-row" style="--c:#3fb8ff"><i></i><span class="ln">CT see-through</span><span class="lm">${Math.round(B.ctU.uScan.value * 100)}%</span></div></div>`;

@@ -22,7 +22,10 @@ export function buildUnderground(M) {
   const W = x1 - x0, D = z1 - z0;
   add(shell, box(W, 0.5, D), M.basement, (x0 + x1) / 2, floorY - 0.25, (z0 + z1) / 2, 0, 0, 0, { cast: false });
   for (const x of [x0, x1]) add(shell, box(0.6, ceilY - floorY, D), M.basement, x, (floorY + ceilY) / 2, (z0 + z1) / 2);
-  for (const z of [z0, z1]) add(shell, box(W, ceilY - floorY, 0.6), M.basement, (x0 + x1) / 2, (floorY + ceilY) / 2, z);
+  add(shell, box(W, ceilY - floorY, 0.6), M.basement, (x0 + x1) / 2, (floorY + ceilY) / 2, z1);
+  // north wall, split around the cart ramp portal
+  add(shell, box(210 - x0, ceilY - floorY, 0.6), M.basement, (x0 + 210) / 2, (floorY + ceilY) / 2, z0);
+  add(shell, box(x1 - 222, ceilY - floorY, 0.6), M.basement, (222 + x1) / 2, (floorY + ceilY) / 2, z0);
   for (let x = x0 + 20; x < x1; x += 40) for (let z = z0 + 20; z < z1; z += 40) add(shell, box(1.2, ceilY - floorY, 1.2), M.basement, x, (floorY + ceilY) / 2, z);
   // ceiling light strips
   for (let x = x0 + 30; x < x1; x += 60) add(shell, box(40, 0.15, 0.6), M.panelLight, x, ceilY - 0.2, (z0 + z1) / 2, 0, 0, 0, { cast: false });

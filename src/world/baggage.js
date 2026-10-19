@@ -1,18 +1,23 @@
 import * as THREE from 'three';
-import { add, box, cyl, rbox, torus, mergeByMaterial, boxUV } from '../core/geo.js';
+import { add, box, cyl, rbox, torus, mergeByMaterial, beltStrip } from '../core/geo.js';
 import { SpeedPath, curveFrom, orientAlong } from '../core/curves.js';
 import { rng } from '../core/rng.js';
 import { flatWhite } from '../core/canvas.js';
 import { screenMaterial, TIME } from './materials.js';
 import { screenTex, bagTagTex } from './textures.js';
-import { BAG_ROUTE, BASEMENT, CHECKIN, TERMINAL } from './layout.js';
+import { BAG_ROUTE, BASEMENT } from './layout.js';
 import { crowd, baggageTug, baggageCart, beltLoader } from './vehicles.js';
 
 /* ------------------------------------------------------------------ *
  * The baggage system: check-in desks, a drop chute, the CT scanner,
  * the sorter maze with hundreds of moving bags, the make-up area, the
- * cart that drives to the stand, and the hero suitcase itself.
+ * cart that drives up the ramp to the stand, and the hero suitcase.
+ * Every belt is one continuous strip along the exact route curve, so
+ * the bag always sits on it (belt top = route − 1 cm).
  * ------------------------------------------------------------------ */
+
+const BELT_TOP = -0.01;   // belt surface relative to the route point (the bag's base)
+const BELT_THICK = 0.12;
 
 /* Suitcase shell material with a CT "see-through" state */
 export function bagMaterial(color = '#2d5f8f') {
@@ -35,43 +40,38 @@ export function bagMaterial(color = '#2d5f8f') {
   return m;
 }
 
+/* belt + rails + legs along a curve between arc fractions */
+function conveyor(M, parent, curve, u0, u1, { width = 1.1, closed = false, legs = true } = {}) {
+  const yc = BELT_TOP - BELT_THICK / 2;
+  add(parent, beltStrip(curve, u0, u1, { width, thick: BELT_THICK, yOffset: yc, closed }), M.belt, 0, 0, 0, 0, 0, 0, { cast: false });
+  for (const s of [-1, 1]) add(parent, beltStrip(curve, u0, u1, { width: 0.07, thick: 0.22, yOffset: yc + 0.05, xOffset: s * (width / 2 + 0.05), closed }), M.conveyorRail, 0, 0, 0, 0, 0, 0, { cast: false });
+  add(parent, beltStrip(curve, u0, u1, { width: width + 0.26, thick: 0.05, yOffset: yc - BELT_THICK / 2 - 0.03, closed }), M.conveyorFrame, 0, 0, 0, 0, 0, 0, { cast: false });
+  if (!legs) return;
+  const len = curve.getLength() * (u1 - u0);
+  const P = new THREE.Vector3();
+  for (let d = 1.5; d < len; d += 3) {
+    const u = u0 + (u1 - u0) * (d / len);
+    curve.getPointAt(closed ? u % 1 : u, P);
+    const floor = P.y > -1.2 ? 0 : BASEMENT.floorY;
+    const top = P.y + yc - BELT_THICK / 2 - 0.05;
+    if (top - floor > 0.3) add(parent, box(0.08, top - floor, 0.08), M.conveyorFrame, P.x, (top + floor) / 2, P.z);
+  }
+}
+
 export function buildBaggage(M, daylight) {
   const g = new THREE.Group();
   g.name = 'baggage';
   const r = rng(21);
   const pts = BAG_ROUTE.points;
 
-  // ---- conveyors along the hero route up to the make-up area ----
+  // route for the hero bag (built first: the belts follow its exact curve)
+  const route = new SpeedPath(pts, BAG_ROUTE.speeds, { tension: 0.5 });
+  const wpU = route.wpU;
+
+  // ---- conveyors along the hero route: check-in → make-up, and the belt loader climb ----
   const belts = new THREE.Group();
-  const beltSeg = (a, b, w = 1.0) => {
-    const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
-    const len = Math.hypot(dx, dy, dz);
-    const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
-    const seg = new THREE.Group();
-    seg.position.set(mid[0], mid[1] - 0.2, mid[2]);
-    seg.lookAt(b[0], b[1] - 0.2, b[2]);
-    const bg = box(w, 0.12, len + 0.2);
-    const uv = bg.attributes.uv;
-    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 0.6, uv.getY(i) * 0.55);
-    add(seg, bg, M.belt, 0, 0, 0, 0, 0, 0, { cast: false });
-    add(seg, box(0.08, 0.3, len + 0.2), M.conveyorRail, -w / 2 - 0.04, 0.08, 0);
-    add(seg, box(0.08, 0.3, len + 0.2), M.conveyorRail, w / 2 + 0.04, 0.08, 0);
-    add(seg, box(w + 0.3, 0.06, len + 0.2), M.conveyorFrame, 0, -0.14, 0);
-    return seg;
-  };
-  for (let i = 0; i < BAG_ROUTE.cartFrom; i++) {
-    const a = pts[i], b = pts[i + 1];
-    const seg = beltSeg(a, b, i < 3 ? 0.9 : 1.1);
-    belts.add(seg);
-    // legs
-    const len = Math.hypot(b[0] - a[0], b[2] - a[2]);
-    for (let d = 1.5; d < len; d += 3) {
-      const t = d / len;
-      const x = a[0] + (b[0] - a[0]) * t, y = a[1] + (b[1] - a[1]) * t, z = a[2] + (b[2] - a[2]) * t;
-      const floor = y > -1 ? 0 : BASEMENT.floorY;
-      if (y - floor > 0.4) add(belts, box(0.08, y - 0.3 - floor, 0.08), M.conveyorFrame, x, (y - 0.3 + floor) / 2, z);
-    }
-  }
+  conveyor(M, belts, route.curve, 0, wpU[BAG_ROUTE.cartFrom - 1], { width: 1.0 });
+  conveyor(M, belts, route.curve, wpU[BAG_ROUTE.cartTo], wpU[BAG_ROUTE.loaderTo], { width: 0.9, legs: false });
   mergeByMaterial(belts);
   g.add(belts);
 
@@ -83,18 +83,12 @@ export function buildBaggage(M, daylight) {
   ];
   const loopCurves = loops.map((pl) => curveFrom(pl, { closed: true, tension: 0.5 }));
   const loopBelts = new THREE.Group();
-  for (const c of loopCurves) {
-    const n = 48;
-    for (let i = 0; i < n; i++) {
-      const a = c.getPointAt(i / n), b = c.getPointAt(((i + 1) % n) / n);
-      loopBelts.add(beltSeg([a.x, a.y, a.z], [b.x, b.y, b.z], 1.1));
-      if (i % 3 === 0) add(loopBelts, box(0.08, a.y - 0.3 - BASEMENT.floorY, 0.08), M.conveyorFrame, a.x, (a.y - 0.3 + BASEMENT.floorY) / 2, a.z);
-    }
-  }
+  for (const c of loopCurves) conveyor(M, loopBelts, c, 0, 1, { width: 1.1, closed: true });
   mergeByMaterial(loopBelts);
   g.add(loopBelts);
   const BAG_N = 260;
   const bagGeo = rbox(0.62, 0.26, 0.42, 0.06);
+  bagGeo.translate(0, 0.13, 0); // base at the origin, so instances sit on the belt
   const bagMat = new THREE.MeshStandardMaterial({ roughness: 0.6, metalness: 0.05 });
   const bags = new THREE.InstancedMesh(bagGeo, bagMat, BAG_N);
   bags.castShadow = false;
@@ -138,49 +132,66 @@ export function buildBaggage(M, daylight) {
   people.instanceMatrix.needsUpdate = true;
   g.add(people);
 
-  // ---- CT scanner around the route at z ≈ ctZ ----
+  // ---- CT scanner: a translucent shell around an open tunnel, so the scan reads from outside ----
   const ct = new THREE.Group();
-  ct.position.set(-60, -6.3 - 0.3, BAG_ROUTE.ctZ);
-  add(ct, rbox(3.2, 2.6, 4.2, 0.12), M.ctBody, 0, 1.0, 0);
-  add(ct, box(1.5, 1.4, 4.4), M.ctInner, 0, 0.75, 0, 0, 0, 0, { cast: false });
-  add(ct, box(1.6, 1.5, 0.3), M.ctInner, 0, 0.8, 2.1, 0, 0, 0, { cast: false });
-  add(ct, box(1.6, 1.5, 0.3), M.ctInner, 0, 0.8, -2.1, 0, 0, 0, { cast: false });
-  add(ct, box(3.22, 0.12, 4.2), M.lightCyan, 0, 2.2, 0, 0, 0, 0, { cast: false, tags: { noMerge: true } });
-  const ring = add(ct, torus(1.0, 0.07, 8, 32), M.lightCyan, 0, 0.8, 0, 0, 0, 0, { cast: false, tags: { noMerge: true } });
+  const beltY = -6.3 + BELT_TOP;           // belt surface height inside the scanner
+  ct.position.set(-60, beltY, BAG_ROUTE.ctZ);
+  const ctShell = M.ctBody.clone();
+  ctShell.transparent = true;
+  ctShell.opacity = 0.42;
+  ctShell.depthWrite = false;
+  ctShell.userData.noDepth = true;
+  const tunnelH = 1.5, tunnelW = 1.6;
+  const top = add(ct, rbox(3.2, 1.0, 4.2, 0.1), ctShell, 0, tunnelH + 0.5, 0, 0, 0, 0, { cast: false });
+  top.renderOrder = 1;
+  for (const s of [-1, 1]) { const w = add(ct, rbox(0.8, tunnelH + 1.0, 4.2, 0.1), ctShell, s * (tunnelW / 2 + 0.4), (tunnelH + 1.0) / 2 - 0.5, 0, 0, 0, 0, { cast: false }); w.renderOrder = 1; }
+  // tunnel frame + scanning ring (its own material, so pulsing it touches nothing else)
+  for (const z of [-2.0, 2.0]) add(ct, torus(1.0, 0.05, 8, 32), M.steelDark, 0, 0.75, z, 0, 0, 0, { cast: false });
+  const ringMat = new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: '#5ee7ff', emissiveIntensity: 2, roughness: 0.4 });
+  const ring = add(ct, torus(1.0, 0.07, 8, 32), ringMat, 0, 0.75, 0, 0, 0, 0, { cast: false, tags: { noMerge: true } });
+  add(ct, box(3.22, 0.12, 4.2), M.lightCyan, 0, tunnelH + 1.05, 0, 0, 0, 0, { cast: false });
   const ctScreenMat = screenMaterial(screenTex('ct'), 1.2);
   daylight.glow(ctScreenMat, 1.2, 0.3);
-  add(ct, box(1.6, 1.0, 0.08), ctScreenMat, 1.65, 1.9, 0, 0, Math.PI / 2, 0, { cast: false, tags: { noMerge: true } });
-  add(ct, box(0.3, 1.6, 0.3), M.ctBody, 1.75, 1.0, 0);
+  add(ct, box(1.6, 1.0, 0.08), ctScreenMat, 1.75, 1.6, 0, 0, Math.PI / 2, 0, { cast: false, tags: { noMerge: true } });
+  add(ct, box(0.3, 1.8, 0.3), M.steelDark, 1.85, 0.6, 0);
   mergeByMaterial(ct);
   g.add(ct);
 
-  // ---- make-up area: ULDs and a dolly row near x 100..120 ----
+  // ---- make-up area on the hall floor: ULDs on dollies, waiting carts ----
+  const floorY = BASEMENT.floorY;
   const makeup = new THREE.Group();
   for (let i = 0; i < 4; i++) {
-    const x = 96 + i * 7;
-    add(makeup, rbox(2.4, 1.6, 1.6, 0.14), M.uld, x, -6.3 + 0.9, 42);
-    add(makeup, box(2.6, 0.1, 1.8), M.gseDark, x, -6.3 + 0.05, 42);
+    const x = 118 + i * 7;
+    add(makeup, box(2.6, 0.12, 1.8), M.gseDark, x, floorY + 0.36, 42);
+    for (const [dx, dz] of [[-1, -0.7], [1, -0.7], [-1, 0.7], [1, 0.7]]) add(makeup, cyl(0.18, 0.18, 0.12, 10), M.tyre, x + dx, floorY + 0.18, 42 + dz, 0, 0, Math.PI / 2);
+    add(makeup, rbox(2.4, 1.6, 1.6, 0.14), M.uld, x, floorY + 0.42 + 0.8, 42);
   }
-  // ramp walls up to the apron
-  add(makeup, box(0.4, 7, 60), M.basement, 149, -3.5, 36 - 7.5 + 2);
-  add(makeup, box(0.4, 7, 60), M.basement, 149, -3.5, 36 + 7.5 - 2);
+  // the cart ramp: a sloped slab with kerbs, from the hall floor up to the apron
+  const R = BAG_ROUTE.ramp;
+  const rampLen = Math.hypot(R.z0 - R.z1, R.y1 - R.y0);
+  const tilt = Math.atan2(R.y1 - R.y0, R.z0 - R.z1);
+  const rampY = (R.y0 + R.y1) / 2 - 0.15, rampZ = (R.z0 + R.z1) / 2;
+  add(makeup, box(10, 0.3, rampLen + 1.2), M.concrete, R.x, rampY, rampZ, tilt, 0, 0);
+  for (const s of [-1, 1]) add(makeup, box(0.3, 0.6, rampLen + 1.2), M.basement, R.x + s * 5.15, rampY + 0.3, rampZ, tilt, 0, 0);
+  // portal where the ramp leaves the terminal front
+  add(makeup, box(11.4, 0.6, 2.4), M.paintDark, R.x, 4.3, 21);
+  for (const s of [-1, 1]) add(makeup, box(0.5, 4.6, 2.4), M.paintDark, R.x + s * 5.45, 2.0, 21);
+  add(makeup, box(11, 0.3, 1.2), M.hazard, R.x, 4.1, 22.4, 0, 0, 0, { cast: false });
   mergeByMaterial(makeup);
   g.add(makeup);
-  // ramp surface from (120, -6.3) to (206, 0) along x
-  const ramp = add(g, box(90, 0.3, 10), M.concrete, 163, -3.4, 36, 0, 0, Math.atan2(6.3, 86));
-  ramp.receiveShadow = true;
 
-  // ---- the ride: tug + cart for the apron stretch ----
+  // ---- the ride: tug + cart; positioned by place() ----
   const tug = baggageTug(M);
   const cart = baggageCart(M, 9);
   g.add(tug.group, cart.group);
   tug.group.visible = cart.group.visible = false;
 
-  // ---- belt loader at the hero aircraft fwd hold ----
+  // ---- belt loader at the hero aircraft's forward hold (its own belt is hidden: the strip is the belt) ----
   const loader = beltLoader(M);
-  loader.group.position.set(130.2, 0.05, -21.6);
-  loader.group.rotation.y = -0.45;
-  loader.belt.rotation.x = -0.36;
+  const a = pts[BAG_ROUTE.cartTo], b = pts[BAG_ROUTE.cartTo + 1];
+  loader.group.position.set(a[0] + 0.3, 0.05, a[2] + 0.6);
+  loader.group.rotation.y = Math.atan2(b[0] - a[0], b[2] - a[2]);
+  loader.belt.visible = false;
   g.add(loader.group);
 
   // ---- hero bag ----
@@ -214,50 +225,43 @@ export function buildBaggage(M, daylight) {
   mergeByMaterial(hero);
   g.add(hero);
 
-  // route for the hero bag
-  const route = new SpeedPath(pts, BAG_ROUTE.speeds, { tension: 0.5 });
-  const wpU = route.wpU;
-
   // ---- update ----
-  const _o = new THREE.Object3D(), _p = new THREE.Vector3(), _t = new THREE.Vector3();
+  const _o = new THREE.Object3D(), _p = new THREE.Vector3(), _t = new THREE.Vector3(), _ht = new THREE.Vector3();
   let bagFlow = 1;
   const api = {
     group: g, hero, shellMat, innerMats, route, ct, ring, tug, cart, loader, bags, people, loopCurves,
     ctU: shellMat.userData.ct,
     cartRange: [wpU[BAG_ROUTE.cartFrom], wpU[BAG_ROUTE.cartTo]],
-    ctRange: [wpU[7], wpU[9]],
+    ctRange: [wpU[BAG_ROUTE.ctFrom], wpU[BAG_ROUTE.ctTo]],
     setBagColor(c) { shellMat.color.set(c); },
     setScan(k) {
       shellMat.userData.ct.uScan.value = k;
       shellMat.depthWrite = k < 0.05;
       for (const m of innerMats) m.opacity = k * 0.95;
-      ring.material.emissiveIntensity = 2 + k * 6;
+      ringMat.emissiveIntensity = 2 + k * 5;
     },
     setBagFlow(k) { bagFlow = k; },
-    /* place the hero (and the cart) at arc fraction u */
+    /* place the hero (and the cart) at arc fraction u; the route already is the bag's base height */
     place(u) {
       route.pointAtU(u, _p);
       route.tangentAtU(u, _t);
       const [c0, c1] = api.cartRange;
       const onCart = THREE.MathUtils.smoothstep(u, c0 - 0.004, c0 + 0.004) * (1 - THREE.MathUtils.smoothstep(u, c1 - 0.004, c1 + 0.004));
       hero.position.copy(_p);
-      hero.position.y += onCart * 0.95;
+      _ht.copy(_t);
       orientAlong(hero, _t, 0, u > c0);
       hero.rotation.z = 0;
-      const show = u > c0 - 0.03 && u < c1 + 0.08;
-      tug.group.visible = cart.group.visible = show;
-      if (show) {
-        const uc = THREE.MathUtils.clamp(u, c0, c1);
-        route.pointAtU(uc, _p);
-        route.tangentAtU(uc, _t);
-        _t.y = 0;
-        _t.normalize();
-        cart.group.position.set(_p.x, 0.05, _p.z);
-        orientAlong(cart.group, _t, 0, true);
-        tug.group.position.copy(cart.group.position).addScaledVector(_t, 3.6);
-        orientAlong(tug.group, _t, 0, true);
-      }
-      return { pos: hero.position, tan: _t, onCart };
+      // the cart waits at the pick-up, carries the bag, then waits at the loader
+      const uc = THREE.MathUtils.clamp(u, c0, c1);
+      route.pointAtU(uc, _p);
+      route.tangentAtU(uc, _t);
+      _t.y = 0;
+      _t.normalize();
+      cart.group.position.set(_p.x, _p.y - 0.95, _p.z);
+      orientAlong(cart.group, _t, 0, true);
+      tug.group.position.copy(cart.group.position).addScaledVector(_t, 3.6);
+      orientAlong(tug.group, _t, 0, true);
+      return { pos: hero.position, tan: _ht, onCart };
     },
     update(dt) {
       if (!g.visible) return;
@@ -267,7 +271,7 @@ export function buildBaggage(M, daylight) {
         s.curve.getPointAt(s.u, _p);
         s.curve.getTangentAt(s.u, _t);
         _o.position.copy(_p);
-        _o.position.y += 0.0;
+        _o.position.y += BELT_TOP;
         orientAlong(_o, _t);
         _o.rotateY(s.rot);
         _o.scale.setScalar(s.s);
